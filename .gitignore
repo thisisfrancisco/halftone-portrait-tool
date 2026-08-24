@@ -1,0 +1,9 @@
+node_modules
+dist
+.DS_Store
+*.local
+.snap
+public/_preview.html
+
+# reference material (screenshots of third-party sites)
+_Images/
