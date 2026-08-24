@@ -51,6 +51,18 @@ export interface HalftonePortraitProps {
   whitePoint?: number;
   /** Contrast curve applied after black/white point. <1 lifts mids. Default 0.8. */
   gamma?: number;
+  /**
+   * Glyph density given to dark cells that are enclosed by lit ones — eye
+   * sockets, nostrils, the shadow side of the face. Stops them reading as
+   * holes. `0` disables. Default 0.1.
+   */
+  fillHoles?: number;
+  /**
+   * How many cells of gap in the silhouette to seal before deciding what counts
+   * as interior. Raise it if holes stay empty, lower it if background fills in.
+   * Default 2.
+   */
+  fillHoleSeal?: number;
   /** Glyph size relative to its cell. >1 fills the cell more. Default 1.4. */
   glyphScale?: number;
   /** Monospace stack used for the glyphs. */
@@ -265,6 +277,8 @@ interface BuildOpts {
   swirl: number;
   seed: number;
   flowScale: number;
+  fillHoles: number;
+  fillHoleSeal: number;
 }
 
 function buildField(o: BuildOpts): Field {
@@ -303,19 +317,139 @@ function buildField(o: BuildOpts): Field {
     const lum = sampleLuminance(o.img, cols, rows);
     const span = Math.max(0.001, o.whitePoint - o.blackPoint);
     const last = o.ramp.length - 1;
+    const nCells = cols * rows;
 
-    // Pass 1: which cells survive the black point?
-    const keep: number[] = [];
-    const gidx: number[] = [];
-    for (let i = 0; i < lum.length; i++) {
+    // Pass 1: tone-map into a density map. 0 means the cell is empty.
+    const dens = new Float32Array(nCells);
+    const lit = new Uint8Array(nCells);
+    for (let i = 0; i < nCells; i++) {
       let v = (lum[i] - o.blackPoint) / span;
       if (v <= 0) continue;
       if (v > 1) v = 1;
       v = Math.pow(v, o.gamma);
-      const g = Math.min(last, Math.floor(v * o.ramp.length));
       if (v < 0.02) continue;
+      dens[i] = v;
+      lit[i] = 1;
+    }
+
+    // Pass 2: fill interior holes. Eye sockets and nostrils sit below the black
+    // point and get culled, leaving voids in the middle of the face. Lowering
+    // the black point instead would drag the photo's background in as noise, so
+    // what matters is separating "interior shadow" from "background".
+    //
+    // A fixed-window enclosure test can't do that: the shadow side of a face is
+    // sparsely lit, so a large socket there looks no more enclosed than open
+    // background. Connectivity can. This is a morphological close — dilate the
+    // lit mask to seal gaps in the silhouette, flood the background inwards from
+    // the frame edge, then erode by the same amount to undo the dilation. What
+    // survives is unreachable from outside: a genuine hole.
+    if (o.fillHoles > 0) {
+      const iw = cols + 1;
+      const litSum = new Int32Array(iw * (rows + 1));
+      for (let y = 0; y < rows; y++) {
+        let rowSum = 0;
+        for (let x = 0; x < cols; x++) {
+          rowSum += lit[y * cols + x];
+          litSum[(y + 1) * iw + (x + 1)] = litSum[y * iw + (x + 1)] + rowSum;
+        }
+      }
+
+      const seal = Math.max(0, Math.round(o.fillHoleSeal));
+      const windowCount = (sum: Int32Array, x: number, y: number, r: number) => {
+        const x0 = Math.max(0, x - r);
+        const y0 = Math.max(0, y - r);
+        const x1 = Math.min(cols - 1, x + r);
+        const y1 = Math.min(rows - 1, y + r);
+        return (
+          sum[(y1 + 1) * iw + (x1 + 1)] -
+          sum[y0 * iw + (x1 + 1)] -
+          sum[(y1 + 1) * iw + x0] +
+          sum[y0 * iw + x0]
+        );
+      };
+
+      // Dilate: any cell with a lit neighbour within `seal` counts as silhouette.
+      const solid = new Uint8Array(nCells);
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          solid[y * cols + x] = windowCount(litSum, x, y, seal) > 0 ? 1 : 0;
+        }
+      }
+
+      // Flood the background in from the frame edge, through non-solid cells.
+      const outside = new Uint8Array(nCells);
+      const stack: number[] = [];
+      const visit = (x: number, y: number) => {
+        const i = y * cols + x;
+        if (solid[i] || outside[i]) return;
+        outside[i] = 1;
+        stack.push(i);
+      };
+      for (let x = 0; x < cols; x++) {
+        visit(x, 0);
+        visit(x, rows - 1);
+      }
+      for (let y = 0; y < rows; y++) {
+        visit(0, y);
+        visit(cols - 1, y);
+      }
+      while (stack.length) {
+        const i = stack.pop() as number;
+        const x = i % cols;
+        const y = (i / cols) | 0;
+        if (x > 0) visit(x - 1, y);
+        if (x < cols - 1) visit(x + 1, y);
+        if (y > 0) visit(x, y - 1);
+        if (y < rows - 1) visit(x, y + 1);
+      }
+
+      // Erode by `seal` so the dilation ring around the silhouette does not get
+      // mistaken for interior and drawn as a halo.
+      const outSum = new Int32Array(iw * (rows + 1));
+      for (let y = 0; y < rows; y++) {
+        let rowSum = 0;
+        for (let x = 0; x < cols; x++) {
+          rowSum += outside[y * cols + x];
+          outSum[(y + 1) * iw + (x + 1)] = outSum[y * iw + (x + 1)] + rowSum;
+        }
+      }
+
+      const holes: number[] = [];
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const i = y * cols + x;
+          if (lit[i]) continue;
+          if (windowCount(outSum, x, y, seal) > 0) continue;
+          holes.push(i);
+        }
+      }
+
+      // Safety valve: on a photo without a clean dark background the flood can
+      // fail to reach large areas. Rather than flooding the frame with marks,
+      // skip the fill entirely and leave the plain halftone.
+      let litCount = 0;
+      for (let i = 0; i < nCells; i++) litCount += lit[i];
+      if (holes.length <= litCount * 0.45) {
+        const bp = Math.max(0.001, o.blackPoint);
+        for (let h = 0; h < holes.length; h++) {
+          const i = holes[h];
+          const x = i % cols;
+          const y = (i / cols) | 0;
+          // Track what luminance the cell did have below the black point, so the
+          // fill keeps some modelling instead of flooding every shadow equally,
+          // and jitter it so it reads as scattered marks rather than a flat patch.
+          const t = Math.min(1, lum[i] / bp);
+          dens[i] = o.fillHoles * (0.45 + 0.75 * t) * (0.7 + 0.6 * hash2(x, y, o.seed + 83));
+        }
+      }
+    }
+
+    const keep: number[] = [];
+    const gidx: number[] = [];
+    for (let i = 0; i < nCells; i++) {
+      if (dens[i] <= 0) continue;
       keep.push(i);
-      gidx.push(g);
+      gidx.push(Math.min(last, Math.floor(dens[i] * o.ramp.length)));
     }
 
     if (keep.length > o.maxParticles && attempt < 7) {
@@ -445,6 +579,8 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
     blackPoint = 0.085,
     whitePoint = 0.8,
     gamma = 0.8,
+    fillHoles = 0.1,
+    fillHoleSeal = 2,
     glyphScale = 1.4,
     fontFamily = DEFAULT_FONT,
     fit = 'contain',
@@ -503,6 +639,7 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
   const buildKey = [
     cellSize, mobileCellSize, mobileBreakpoint, maxParticles, mobileMaxParticles,
     ramp, color, background, blackPoint, whitePoint, gamma, glyphScale, fontFamily,
+    fillHoles, fillHoleSeal,
     fit, scale, offsetX, offsetY, travel, swirl, seed, flowScale, maxDpr, debug,
   ].join('|');
 
@@ -567,6 +704,8 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
         blackPoint,
         whitePoint,
         gamma,
+        fillHoles,
+        fillHoleSeal,
         fit,
         scale,
         offsetX,

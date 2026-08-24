@@ -17,6 +17,8 @@ interface Tuning {
   blackPoint: number;
   whitePoint: number;
   gamma: number;
+  fillHoles: number;
+  fillHoleSeal: number;
   travel: number;
   swirl: number;
   spread: number;
@@ -34,6 +36,8 @@ const DEFAULTS: Tuning = {
   blackPoint: 0.085,
   whitePoint: 0.8,
   gamma: 0.8,
+  fillHoles: 0.1,
+  fillHoleSeal: 2,
   travel: 520,
   swirl: 220,
   spread: 0.55,
@@ -51,6 +55,8 @@ const RANGES: Record<keyof Tuning, [number, number, number]> = {
   blackPoint: [0, 0.5, 0.005],
   whitePoint: [0.4, 1, 0.01],
   gamma: [0.3, 2.5, 0.05],
+  fillHoles: [0, 0.4, 0.01],
+  fillHoleSeal: [0, 8, 1],
   travel: [100, 2000, 10],
   swirl: [0, 700, 10],
   spread: [0, 0.95, 0.01],
@@ -119,6 +125,8 @@ export default function App() {
         blackPoint={t.blackPoint}
         whitePoint={t.whitePoint}
         gamma={t.gamma}
+        fillHoles={t.fillHoles}
+        fillHoleSeal={t.fillHoleSeal}
         travel={t.travel}
         swirl={t.swirl}
         spread={t.spread}

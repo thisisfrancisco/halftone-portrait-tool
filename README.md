@@ -95,6 +95,8 @@ Everything is optional except `src`.
 | `blackPoint` | `0.085` | Luminance below this is dropped — this is what removes the photo's background. |
 | `whitePoint` | `0.8` | Luminance at/above this maps to the densest glyph. |
 | `gamma` | `0.8` | `<1` lifts midtones, `>1` deepens them. |
+| `fillHoles` | `0.1` | Glyph density given to dark cells enclosed by lit ones — eye sockets, nostrils, the shadow side of the face. `0` disables. |
+| `fillHoleSeal` | `2` | Cells of gap in the silhouette to seal before deciding what counts as interior. |
 | `glyphScale` | `1.4` | Glyph size relative to its cell. |
 | `fontFamily` | system mono stack | Any monospace stack. |
 
@@ -145,6 +147,8 @@ For a different photo, `blackPoint` and `whitePoint` are the two that matter:
 * **Subject too eroded / shoulders missing** → lower `blackPoint`.
 * **Highlights a flat mass of `@`** → raise `whitePoint`.
 * **Image looks grey and flat, densest glyphs never appear** → lower `whitePoint`.
+* **Eye sockets read as holes** → raise `fillHoles`, or `fillHoleSeal` if they stay empty.
+* **Faint marks appearing out in the background** → lower `fillHoleSeal`.
 
 Run the dev harness and use the live panel rather than guessing — it writes the
 values to `localStorage` and prints a JSON block you can paste straight into your
@@ -187,6 +191,21 @@ leaves a bell-shaped arrival rate — sparse at both ends, frantic in the middle
 with the portrait finishing around 80% of the scroll. Ranking gives a constant
 arrival rate across the full distance while preserving the field's spatial
 ordering, so neighbours still travel together.
+
+**Interior holes.** Eye sockets and nostrils fall below `blackPoint` and get
+culled, leaving voids in the middle of the face. Lowering the black point to
+recover them drags the photo's background in as noise instead, so the real
+problem is separating *interior shadow* from *background*. A fixed-window
+enclosure test cannot do it — the shadow side of a face is so sparsely lit that
+a large socket there looks no more enclosed than open background. Connectivity
+can: this is a morphological close. The lit mask is dilated by `fillHoleSeal` to
+seal gaps in the silhouette, the background is flooded inward from the frame
+edge, and the result is eroded by the same amount to undo the dilation (without
+that erosion the dilation ring draws as a halo around the head). Whatever the
+flood cannot reach is a genuine hole, and gets a faint glyph scaled by the
+luminance it did have, so shadows keep some modelling. If the flood fails to
+reach a large enough area — a photo without a clean dark background — the fill is
+skipped rather than flooding the frame with marks.
 
 **Glyph condensation.** In flight, a character draws a sparser glyph than its
 final one (`round(gi * (0.25 + 0.75 * k))`), so marks visibly condense from dots
