@@ -19,6 +19,10 @@ interface Tuning {
   gamma: number;
   fillHoles: number;
   fillHoleSeal: number;
+  fillHoleFalloff: number;
+  atmosphere: number;
+  atmosphereReach: number;
+  atmosphereScale: number;
   travel: number;
   swirl: number;
   spread: number;
@@ -38,6 +42,10 @@ const DEFAULTS: Tuning = {
   gamma: 0.8,
   fillHoles: 0.1,
   fillHoleSeal: 2,
+  fillHoleFalloff: 0.5,
+  atmosphere: 0.15,
+  atmosphereReach: 45,
+  atmosphereScale: 1,
   travel: 520,
   swirl: 220,
   spread: 0.55,
@@ -57,6 +65,10 @@ const RANGES: Record<keyof Tuning, [number, number, number]> = {
   gamma: [0.3, 2.5, 0.05],
   fillHoles: [0, 0.4, 0.01],
   fillHoleSeal: [0, 8, 1],
+  fillHoleFalloff: [0, 2, 0.05],
+  atmosphere: [0, 0.5, 0.01],
+  atmosphereReach: [4, 90, 1],
+  atmosphereScale: [0.3, 3, 0.05],
   travel: [100, 2000, 10],
   swirl: [0, 700, 10],
   spread: [0, 0.95, 0.01],
@@ -127,6 +139,10 @@ export default function App() {
         gamma={t.gamma}
         fillHoles={t.fillHoles}
         fillHoleSeal={t.fillHoleSeal}
+        fillHoleFalloff={t.fillHoleFalloff}
+        atmosphere={t.atmosphere}
+        atmosphereReach={t.atmosphereReach}
+        atmosphereScale={t.atmosphereScale}
         travel={t.travel}
         swirl={t.swirl}
         spread={t.spread}

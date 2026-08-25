@@ -31,9 +31,9 @@ export interface HalftonePortraitProps {
   mobileCellSize?: number;
   /** Viewport width under which mobile settings apply. Default 768. */
   mobileBreakpoint?: number;
-  /** Hard ceiling on particle count (desktop). Default 10000. */
+  /** Hard ceiling on particle count (desktop). Default 13000. */
   maxParticles?: number;
-  /** Hard ceiling on particle count (mobile). Default 3000. */
+  /** Hard ceiling on particle count (mobile). Default 4200. */
   mobileMaxParticles?: number;
 
   // ---- Look ---------------------------------------------------------------
@@ -63,6 +63,20 @@ export interface HalftonePortraitProps {
    * Default 2.
    */
   fillHoleSeal?: number;
+  /**
+   * How quickly the hole fill thins with depth. 0 fills a socket evenly; higher
+   * values keep the rim and empty out the middle. Default 0.5.
+   */
+  fillHoleFalloff?: number;
+  /**
+   * Peak density of the ambient cloud field around the subject. This is what
+   * stops the hair ending on a hard edge. `0` disables. Default 0.15.
+   */
+  atmosphere?: number;
+  /** How far, in cells, the cloud reaches from the silhouette. Default 45. */
+  atmosphereReach?: number;
+  /** Cloud noise frequency. Higher = smaller, busier wisps. Default 1. */
+  atmosphereScale?: number;
   /** Glyph size relative to its cell. >1 fills the cell more. Default 1.4. */
   glyphScale?: number;
   /** Monospace stack used for the glyphs. */
@@ -120,6 +134,10 @@ const DEFAULT_FONT =
 
 /** Number of pre-baked opacity steps in the glyph atlas. */
 const ALPHA_LEVELS = 12;
+/** Weight the atmosphere keeps once far from the silhouette — a faint mist. */
+const ATMO_FLOOR = 0.12;
+/** Share of the particle budget the atmosphere may spend. */
+const ATMO_BUDGET = 0.3;
 const TAU = Math.PI * 2;
 
 /* -------------------------------------------------------------------------- */
@@ -279,6 +297,10 @@ interface BuildOpts {
   flowScale: number;
   fillHoles: number;
   fillHoleSeal: number;
+  fillHoleFalloff: number;
+  atmosphere: number;
+  atmosphereReach: number;
+  atmosphereScale: number;
 }
 
 function buildField(o: BuildOpts): Field {
@@ -305,19 +327,47 @@ function buildField(o: BuildOpts): Field {
       }
     }
 
-    const cols = Math.max(1, Math.floor(boxW / cell));
-    const rows = Math.max(1, Math.floor(boxH / cell));
+    // Snap the portrait box to whole cells so the sampled grid and the particle
+    // grid share an origin.
+    const pcols = Math.max(1, Math.round(boxW / cell));
+    const prows = Math.max(1, Math.round(boxH / cell));
+    boxW = pcols * cell;
+    boxH = prows * cell;
+    const left = (o.vw - boxW) / 2 + o.offsetX * o.vw;
+    const top = (o.vh - boxH) / 2 + o.offsetY * o.vh;
+
+    // The particle grid extends past the portrait box so the atmosphere has
+    // somewhere to live — without it the silhouette has no room to dissolve into
+    // and the hair just stops at the box edge. Padding is clamped to the
+    // viewport, since particles drawn outside it are pure waste.
+    const wantPad = o.atmosphere > 0 ? Math.ceil(o.atmosphereReach) : 0;
+    const padL = Math.min(wantPad, Math.max(0, Math.ceil(left / cell)));
+    const padT = Math.min(wantPad, Math.max(0, Math.ceil(top / cell)));
+    const padR = Math.min(wantPad, Math.max(0, Math.ceil((o.vw - left - boxW) / cell)));
+    const padB = Math.min(wantPad, Math.max(0, Math.ceil((o.vh - top - boxH) / cell)));
+    const cols = pcols + padL + padR;
+    const rows = prows + padT + padB;
+    const gLeft = left - padL * cell;
+    const gTop = top - padT * cell;
+    const nCells = cols * rows;
 
     // Bail early on absurd grids before touching getImageData.
-    if (cols * rows > o.maxParticles * 6) {
+    if (nCells > o.maxParticles * 14) {
       cell *= 1.18;
       continue;
     }
 
-    const lum = sampleLuminance(o.img, cols, rows);
+    // Sample the photo at the portrait box only; the pad ring stays empty.
+    const plum = sampleLuminance(o.img, pcols, prows);
+    const lum = new Float32Array(nCells);
+    for (let y = 0; y < prows; y++) {
+      for (let x = 0; x < pcols; x++) {
+        lum[(y + padT) * cols + (x + padL)] = plum[y * pcols + x];
+      }
+    }
+
     const span = Math.max(0.001, o.whitePoint - o.blackPoint);
     const last = o.ramp.length - 1;
-    const nCells = cols * rows;
 
     // Pass 1: tone-map into a density map. 0 means the cell is empty.
     const dens = new Float32Array(nCells);
@@ -332,7 +382,9 @@ function buildField(o: BuildOpts): Field {
       lit[i] = 1;
     }
 
-    // Pass 2: fill interior holes. Eye sockets and nostrils sit below the black
+    const isHole = new Uint8Array(nCells);
+
+    // Pass 2: find interior holes. Eye sockets and nostrils sit below the black
     // point and get culled, leaving voids in the middle of the face. Lowering
     // the black point instead would drag the photo's background in as noise, so
     // what matters is separating "interior shadow" from "background".
@@ -368,7 +420,6 @@ function buildField(o: BuildOpts): Field {
         );
       };
 
-      // Dilate: any cell with a lit neighbour within `seal` counts as silhouette.
       const solid = new Uint8Array(nCells);
       for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
@@ -376,7 +427,6 @@ function buildField(o: BuildOpts): Field {
         }
       }
 
-      // Flood the background in from the frame edge, through non-solid cells.
       const outside = new Uint8Array(nCells);
       const stack: number[] = [];
       const visit = (x: number, y: number) => {
@@ -414,33 +464,130 @@ function buildField(o: BuildOpts): Field {
         }
       }
 
-      const holes: number[] = [];
+      let holeCount = 0;
+      let litCount = 0;
+      for (let i = 0; i < nCells; i++) litCount += lit[i];
       for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
           const i = y * cols + x;
           if (lit[i]) continue;
           if (windowCount(outSum, x, y, seal) > 0) continue;
-          holes.push(i);
+          isHole[i] = 1;
+          holeCount++;
         }
       }
 
       // Safety valve: on a photo without a clean dark background the flood can
       // fail to reach large areas. Rather than flooding the frame with marks,
       // skip the fill entirely and leave the plain halftone.
-      let litCount = 0;
-      for (let i = 0; i < nCells; i++) litCount += lit[i];
-      if (holes.length <= litCount * 0.45) {
-        const bp = Math.max(0.001, o.blackPoint);
-        for (let h = 0; h < holes.length; h++) {
-          const i = holes[h];
-          const x = i % cols;
-          const y = (i / cols) | 0;
-          // Track what luminance the cell did have below the black point, so the
-          // fill keeps some modelling instead of flooding every shadow equally,
-          // and jitter it so it reads as scattered marks rather than a flat patch.
-          const t = Math.min(1, lum[i] / bp);
-          dens[i] = o.fillHoles * (0.45 + 0.75 * t) * (0.7 + 0.6 * hash2(x, y, o.seed + 83));
+      if (holeCount > litCount * 0.45) isHole.fill(0);
+    }
+
+    // Distance, in cells, from the nearest lit cell. One chamfer transform feeds
+    // both the hole falloff (so deep sockets thin out instead of reading as a
+    // flat dotted patch) and the atmosphere (so the cloud is densest where it
+    // meets the silhouette and the hair has something to dissolve into).
+    const dist = new Float32Array(nCells);
+    for (let i = 0; i < nCells; i++) dist[i] = lit[i] ? 0 : 1e9;
+    const DIAG = Math.SQRT2;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const i = y * cols + x;
+        if (dist[i] === 0) continue;
+        let d = dist[i];
+        if (y > 0) {
+          const u = i - cols;
+          if (dist[u] + 1 < d) d = dist[u] + 1;
+          if (x > 0 && dist[u - 1] + DIAG < d) d = dist[u - 1] + DIAG;
+          if (x < cols - 1 && dist[u + 1] + DIAG < d) d = dist[u + 1] + DIAG;
         }
+        if (x > 0 && dist[i - 1] + 1 < d) d = dist[i - 1] + 1;
+        dist[i] = d;
+      }
+    }
+    for (let y = rows - 1; y >= 0; y--) {
+      for (let x = cols - 1; x >= 0; x--) {
+        const i = y * cols + x;
+        if (dist[i] === 0) continue;
+        let d = dist[i];
+        if (y < rows - 1) {
+          const v = i + cols;
+          if (dist[v] + 1 < d) d = dist[v] + 1;
+          if (x > 0 && dist[v - 1] + DIAG < d) d = dist[v - 1] + DIAG;
+          if (x < cols - 1 && dist[v + 1] + DIAG < d) d = dist[v + 1] + DIAG;
+        }
+        if (x < cols - 1 && dist[i + 1] + 1 < d) d = dist[i + 1] + 1;
+        dist[i] = d;
+      }
+    }
+
+    // Pass 3: write the hole fill, thinning with depth.
+    if (o.fillHoles > 0) {
+      const bp = Math.max(0.001, o.blackPoint);
+      for (let i = 0; i < nCells; i++) {
+        if (!isHole[i]) continue;
+        const x = i % cols;
+        const y = (i / cols) | 0;
+        // Keep the luminance the cell did have below the black point, so
+        // shadows retain some modelling instead of flooding evenly.
+        const t = Math.min(1, lum[i] / bp);
+        const depth = 1 / (1 + o.fillHoleFalloff * Math.max(0, dist[i] - 1));
+        dens[i] =
+          o.fillHoles * (0.45 + 0.75 * t) * depth * (0.7 + 0.6 * hash2(x, y, o.seed + 83));
+      }
+    }
+
+    // Pass 4: atmosphere. A cloud field of sparse characters around the subject,
+    // densest against the silhouette and thinning outwards, so the portrait
+    // dissolves into the page instead of ending on a hard edge.
+    if (o.atmosphere > 0) {
+      const reach = Math.max(1, o.atmosphereReach);
+      const af = 0.00375 * o.atmosphereScale;
+      const cand: number[] = [];
+      const ccov: number[] = [];
+      const cden: number[] = [];
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const i = y * cols + x;
+          if (lit[i] || isHole[i]) continue;
+          const d = dist[i];
+          let prox = d >= reach ? 0 : 1 - d / reach;
+          prox = prox * prox * (3 - 2 * prox);
+          const weight = ATMO_FLOOR + (1 - ATMO_FLOOR) * prox;
+          const px = gLeft + (x + 0.5) * cell;
+          const py = gTop + (y + 0.5) * cell;
+
+          // Two octaves: banks of cloud with finer wisps riding on them.
+          let c =
+            fbm(px * af, py * af, o.seed + 211) * 0.72 +
+            fbm(px * af * 2.7 + 50, py * af * 2.7 + 90, o.seed + 311) * 0.28;
+          c = (c - 0.38) / 0.42;
+          if (c <= 0) continue;
+          if (c > 1) c = 1;
+
+          // Coverage is applied stochastically rather than as a threshold.
+          // Thresholding the noise gives hard-edged blobs; letting each cell
+          // survive with a probability equal to the local coverage makes the
+          // cloud thin out grain by grain, which is what reads as vapour.
+          const coverage = c * weight;
+          if (hash2(x, y, o.seed + 307) > coverage) continue;
+
+          cand.push(i);
+          ccov.push(coverage);
+          cden.push(o.atmosphere * (0.55 + 0.9 * hash2(x, y, o.seed + 401)));
+        }
+      }
+
+      // Cap what the atmosphere may spend, keeping the cells with the highest
+      // coverage — those sit against the silhouette, doing the actual work.
+      const cap = Math.floor(o.maxParticles * ATMO_BUDGET);
+      if (cand.length > cap) {
+        const ord: number[] = [];
+        for (let k = 0; k < cand.length; k++) ord.push(k);
+        ord.sort((a, b) => ccov[b] - ccov[a]);
+        for (let k = 0; k < cap; k++) dens[cand[ord[k]]] = cden[ord[k]];
+      } else {
+        for (let k = 0; k < cand.length; k++) dens[cand[k]] = cden[k];
       }
     }
 
@@ -485,19 +632,14 @@ function buildField(o: BuildOpts): Field {
       cell,
     };
 
-    const left = (o.vw - boxW) / 2 + o.offsetX * o.vw;
-    const top = (o.vh - boxH) / 2 + o.offsetY * o.vh;
-    const stepX = boxW / cols;
-    const stepY = boxH / rows;
-
     for (let k = 0; k < n; k++) {
       const srcIdx = order[k];
       const cellIdx = keep[srcIdx];
       const cx = cellIdx % cols;
       const cy = (cellIdx / cols) | 0;
 
-      const tx = left + (cx + 0.5) * stepX;
-      const ty = top + (cy + 0.5) * stepY;
+      const tx = gLeft + (cx + 0.5) * cell;
+      const ty = gTop + (cy + 0.5) * cell;
       f.tx[k] = tx;
       f.ty[k] = ty;
       f.gi[k] = gidx[srcIdx];
@@ -511,9 +653,9 @@ function buildField(o: BuildOpts): Field {
       // as streams rather than as independent dots.
       const ff = 0.0042 * o.flowScale;
       const ang = fbm(tx * ff, ty * ff, o.seed) * TAU * 2.2 + r1 * 0.7;
-      const dist = o.travel * (0.45 + 0.95 * r2);
-      const ox = tx + Math.cos(ang) * dist;
-      const oy = ty + Math.sin(ang) * dist;
+      const dst = o.travel * (0.45 + 0.95 * r2);
+      const ox = tx + Math.cos(ang) * dst;
+      const oy = ty + Math.sin(ang) * dst;
       f.ox[k] = ox;
       f.oy[k] = oy;
 
@@ -531,11 +673,10 @@ function buildField(o: BuildOpts): Field {
       // frame at once, with a light top-down bias for direction. Stored raw here
       // and normalised below.
       const wf = 0.0034 * o.flowScale;
-      const wave =
+      f.delay[k] =
         0.85 * fbm(tx * wf + 100, ty * wf + 50, o.seed + 3) +
-        0.15 * ((ty - top) / Math.max(1, boxH)) +
+        0.15 * ((ty - gTop) / Math.max(1, rows * cell)) +
         (r1 - 0.5) * 0.06;
-      f.delay[k] = wave;
     }
 
     // Rank-normalise the wave into [0,1]. Simply rescaling min..max leaves a
@@ -570,8 +711,8 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
     cellSize = 5.5,
     mobileCellSize = 5,
     mobileBreakpoint = 768,
-    maxParticles = 10000,
-    mobileMaxParticles = 3000,
+    maxParticles = 13000,
+    mobileMaxParticles = 4200,
     ramp = DEFAULT_RAMP,
     color = '#F5F5F5',
     background = null,
@@ -581,6 +722,10 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
     gamma = 0.8,
     fillHoles = 0.1,
     fillHoleSeal = 2,
+    fillHoleFalloff = 0.5,
+    atmosphere = 0.15,
+    atmosphereReach = 45,
+    atmosphereScale = 1,
     glyphScale = 1.4,
     fontFamily = DEFAULT_FONT,
     fit = 'contain',
@@ -639,7 +784,7 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
   const buildKey = [
     cellSize, mobileCellSize, mobileBreakpoint, maxParticles, mobileMaxParticles,
     ramp, color, background, blackPoint, whitePoint, gamma, glyphScale, fontFamily,
-    fillHoles, fillHoleSeal,
+    fillHoles, fillHoleSeal, fillHoleFalloff, atmosphere, atmosphereReach, atmosphereScale,
     fit, scale, offsetX, offsetY, travel, swirl, seed, flowScale, maxDpr, debug,
   ].join('|');
 
@@ -706,6 +851,10 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
         gamma,
         fillHoles,
         fillHoleSeal,
+        fillHoleFalloff,
+        atmosphere,
+        atmosphereReach,
+        atmosphereScale,
         fit,
         scale,
         offsetX,

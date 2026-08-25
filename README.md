@@ -81,8 +81,8 @@ Everything is optional except `src`.
 | `cellSize` | `5.5` | Halftone cell in CSS px (desktop). Smaller = finer. |
 | `mobileCellSize` | `5` | Cell size below `mobileBreakpoint`. |
 | `mobileBreakpoint` | `768` | Viewport width for the mobile branch. |
-| `maxParticles` | `10000` | Desktop ceiling. Cell size grows automatically to respect it. |
-| `mobileMaxParticles` | `3000` | Mobile ceiling. |
+| `maxParticles` | `13000` | Desktop ceiling. Cell size grows automatically to respect it. |
+| `mobileMaxParticles` | `4200` | Mobile ceiling. |
 
 ### Look
 
@@ -97,6 +97,10 @@ Everything is optional except `src`.
 | `gamma` | `0.8` | `<1` lifts midtones, `>1` deepens them. |
 | `fillHoles` | `0.1` | Glyph density given to dark cells enclosed by lit ones — eye sockets, nostrils, the shadow side of the face. `0` disables. |
 | `fillHoleSeal` | `2` | Cells of gap in the silhouette to seal before deciding what counts as interior. |
+| `fillHoleFalloff` | `0.5` | How fast the hole fill thins with depth. `0` fills a socket evenly; higher keeps the rim and empties the middle. |
+| `atmosphere` | `0.15` | Peak density of the ambient cloud field around the subject. `0` disables. |
+| `atmosphereReach` | `45` | How far, in cells, the cloud reaches from the silhouette. |
+| `atmosphereScale` | `1` | Cloud noise frequency. Higher = smaller, busier wisps. |
 | `glyphScale` | `1.4` | Glyph size relative to its cell. |
 | `fontFamily` | system mono stack | Any monospace stack. |
 
@@ -148,7 +152,10 @@ For a different photo, `blackPoint` and `whitePoint` are the two that matter:
 * **Highlights a flat mass of `@`** → raise `whitePoint`.
 * **Image looks grey and flat, densest glyphs never appear** → lower `whitePoint`.
 * **Eye sockets read as holes** → raise `fillHoles`, or `fillHoleSeal` if they stay empty.
+* **A socket reads as a flat dotted patch** → raise `fillHoleFalloff`.
 * **Faint marks appearing out in the background** → lower `fillHoleSeal`.
+* **Silhouette ends on a hard edge (hair, shoulders)** → raise `atmosphere` or `atmosphereReach`.
+* **Cloud reads as texture rather than banks** → lower `atmosphereScale`.
 
 Run the dev harness and use the live panel rather than guessing — it writes the
 values to `localStorage` and prints a JSON block you can paste straight into your
@@ -206,6 +213,21 @@ flood cannot reach is a genuine hole, and gets a faint glyph scaled by the
 luminance it did have, so shadows keep some modelling. If the flood fails to
 reach a large enough area — a photo without a clean dark background — the fill is
 skipped rather than flooding the frame with marks.
+
+**Atmosphere.** The particle grid covers the whole viewport, not just the
+portrait box, which gives the silhouette somewhere to dissolve into — without it
+the hair simply stops at the box edge. A single chamfer distance transform from
+the lit mask drives two things: the hole fill thins with depth (so a deep socket
+keeps its rim and empties out rather than reading as a flat dotted patch), and
+the cloud is densest where it meets the silhouette, fading to a faint mist
+further out.
+
+Cloud coverage is applied **stochastically**, not as a threshold. Thresholding
+the noise produces hard-edged blobs; letting each cell survive with a probability
+equal to its local coverage makes the field thin out grain by grain, which is
+what reads as vapour. The atmosphere is capped at 30% of the particle budget,
+keeping the highest-coverage cells — the ones doing the work against the
+silhouette.
 
 **Glyph condensation.** In flight, a character draws a sparser glyph than its
 final one (`round(gi * (0.25 + 0.75 * k))`), so marks visibly condense from dots
