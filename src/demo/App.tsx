@@ -87,7 +87,7 @@ export default function App() {
     return DEFAULTS;
   });
   const [progress, setProgress] = useState(0);
-  const [panel, setPanel] = useState(true);
+  const [panel, setPanel] = useState(import.meta.env.DEV);
   const [fps, setFps] = useState(0);
 
   useEffect(() => {
@@ -127,7 +127,7 @@ export default function App() {
   return (
     <>
       <HalftonePortrait
-        src="/portrait.jpg"
+        src={`${import.meta.env.BASE_URL}portrait.jpg`}
         scrollDistance={t.scrollDistance}
         cellSize={t.cellSize}
         mobileCellSize={t.cellSize - 0.5}

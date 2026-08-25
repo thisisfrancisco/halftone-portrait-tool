@@ -39,6 +39,9 @@ function snapshotPlugin(): Plugin {
 }
 
 export default defineConfig({
+  // Relative base so the build works both at a domain root and under a GitHub
+  // Pages project path (/halftone-portrait-tool/) without hardcoding either.
+  base: './',
   plugins: [react(), snapshotPlugin()],
   server: { port: 5173 },
 });

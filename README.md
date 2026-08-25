@@ -250,11 +250,32 @@ into their final characters as they land.
 
 ---
 
+## Live demo (GitHub Pages)
+
+`.github/workflows/pages.yml` builds the demo and deploys it on every push to
+`main`.
+
+**This needs one setting changed once:** repo *Settings → Pages → Build and
+deployment → Source* must be **GitHub Actions**, not "Deploy from a branch".
+Serving the branch directly publishes the repo root, where `index.html` points
+at `/src/demo/main.tsx` — TypeScript a browser cannot execute, at an absolute
+path that does not exist under a project URL. Nothing renders.
+
+Two details make the build work under `/<repo>/` rather than a domain root:
+
+* `base: './'` in `vite.config.ts`, so assets resolve relative to the page.
+* the demo loads the photo as `` `${import.meta.env.BASE_URL}portrait.jpg` ``
+  rather than `/portrait.jpg`.
+
+The tuning panel is hidden in the deployed build (`import.meta.env.DEV`); press
+`H` to show it anyway.
+
 ## Repo layout
 
 ```
 src/components/HalftonePortrait.tsx   the component — this is the only file you need
-src/demo/App.tsx                      dev harness with the live tuning panel
+src/demo/App.tsx                      demo + live tuning panel (press H)
 public/portrait.jpg                   source image (1100px, from DSC_1771)
-vite.config.ts                        includes a dev-only snapshot endpoint
+vite.config.ts                        relative base, plus a dev-only snapshot endpoint
+.github/workflows/pages.yml           builds and deploys the demo to GitHub Pages
 ```
