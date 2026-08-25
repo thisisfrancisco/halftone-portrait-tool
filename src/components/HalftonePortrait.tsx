@@ -36,6 +36,12 @@ export interface HalftonePortraitProps {
    * `0` disables. Default 0.35.
    */
   restOpacity?: number;
+  /**
+   * Fraction of the not-yet-launched characters actually drawn at rest. Drawing
+   * all of them reads as a dense static field rather than a scatter, so this is
+   * deliberately low. Default 0.035.
+   */
+  restDensity?: number;
 
   // ---- Grid / density -----------------------------------------------------
   /** Halftone cell size in CSS px on desktop. Smaller = finer, heavier. Default 5.5. */
@@ -758,6 +764,7 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
     progress,
     initialProgress = 0,
     restOpacity = 0.35,
+    restDensity = 0.035,
     cellSize = 5.5,
     mobileCellSize = 5,
     mobileBreakpoint = 768,
@@ -811,6 +818,7 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
     progress,
     initialProgress,
     restOpacity,
+    restDensity,
     flightOpacity,
     turbulence,
     smoothing,
@@ -825,6 +833,7 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
     progress,
     initialProgress,
     restOpacity,
+    restDensity,
     flightOpacity,
     turbulence,
     smoothing,
@@ -975,6 +984,7 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
       const fo = l.flightOpacity;
       const turb = reduceMotion ? 0 : l.turbulence;
       const rest = reduceMotion ? 0 : l.restOpacity;
+      const restDens = l.restDensity;
       const shimmer = l.idle && !reduceMotion;
       const count = quality >= 1 ? f.n : Math.floor(f.n * quality);
       const atlasCanvas = at.canvas;
@@ -986,6 +996,10 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
           // Not launched yet. Draw a faint drifting mark at its origin so the
           // top of the page is a field of dust rather than an empty canvas.
           if (rest <= 0) continue;
+          // Only a sparse subset is drawn. Selected by its own hash rather than
+          // f.rnd, which also drives the drift phase — reusing it would make
+          // every survivor drift in lockstep.
+          if (hash2(i, 601, seed) > restDens) continue;
           const r = f.rnd[i];
           let ra = rest * (0.3 + 0.7 * r);
           let ral = (ra * ALPHA_LEVELS) | 0;

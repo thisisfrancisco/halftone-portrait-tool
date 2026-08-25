@@ -74,6 +74,7 @@ Everything is optional except `src`.
 | `progress` | — | Drive progress manually (`0..1`). Overrides scroll. |
 | `initialProgress` | `0` | Progress the portrait rests at before scrolling. Scroll maps this → 1, so it still completes at `scrollDistance`. |
 | `restOpacity` | `0.35` | Opacity of characters that haven't launched yet, drawn drifting at their origin. This is what stops the hero being blank. `0` disables. |
+| `restDensity` | `0.035` | Fraction of those characters actually drawn. Deliberately low — drawing all of them reads as a static field rather than a scatter. |
 | `smoothing` | `110` | Scroll follow time constant (ms). Higher = more glide. |
 
 ### Grid and density
@@ -245,9 +246,15 @@ canvas would be genuinely empty — a blank hero. Raising the progress floor
 doesn't fix it: at 2% only ~3% of characters have launched and they're barely
 faded in, which measured 26 lit pixels against ~25,000 for the finished
 portrait. Instead, characters that haven't launched are drawn drifting faintly
-at their **origins**. The hero rests as a field of dust that then flows into the
-portrait, and the reveal timeline is untouched. Both the resting drift and the
-idle shimmer redraw at `idleFps` rather than every frame.
+at their **origins**, so the reveal timeline is untouched.
+
+Only a small `restDensity` fraction of them is drawn. Showing all ~8,500 reads as
+a dense static field rather than a scatter; at the default 3.5% the hero rests at
+roughly what the original showed after a short scroll (~216 lit pixels vs 8,566
+for the full set). The subset is chosen by its own hash rather than the
+per-particle random that drives the drift phase — reusing that would make every
+survivor drift in lockstep. Both the resting drift and the idle shimmer redraw at
+`idleFps` rather than every frame.
 
 **Glyph condensation.** In flight, a character draws a sparser glyph than its
 final one (`round(gi * (0.25 + 0.75 * k))`), so marks visibly condense from dots

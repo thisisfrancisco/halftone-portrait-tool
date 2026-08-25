@@ -33,6 +33,7 @@ interface Tuning {
   scrollDistance: number;
   initialProgress: number;
   restOpacity: number;
+  restDensity: number;
 }
 
 const DEFAULTS: Tuning = {
@@ -59,6 +60,7 @@ const DEFAULTS: Tuning = {
   scrollDistance: 3000,
   initialProgress: 0,
   restOpacity: 0.35,
+  restDensity: 0.035,
 };
 
 const RANGES: Record<keyof Tuning, [number, number, number]> = {
@@ -85,6 +87,7 @@ const RANGES: Record<keyof Tuning, [number, number, number]> = {
   scrollDistance: [800, 6000, 100],
   initialProgress: [0, 0.2, 0.005],
   restOpacity: [0, 1, 0.01],
+  restDensity: [0, 0.3, 0.005],
 };
 
 export default function App() {
@@ -140,6 +143,7 @@ export default function App() {
         scrollDistance={t.scrollDistance}
         initialProgress={t.initialProgress}
         restOpacity={t.restOpacity}
+        restDensity={t.restDensity}
         cellSize={t.cellSize}
         mobileCellSize={t.cellSize - 0.5}
         opacity={t.opacity}
