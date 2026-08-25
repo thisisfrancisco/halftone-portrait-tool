@@ -23,6 +23,19 @@ export interface HalftonePortraitProps {
   scrollDistance?: number;
   /** Drive progress manually (0..1) instead of by scroll. Overrides scrollDistance. */
   progress?: number;
+  /**
+   * Progress the portrait rests at before any scrolling. Scroll then maps this
+   * value -> 1 rather than 0 -> 1, so the portrait still completes at
+   * `scrollDistance`. Mostly superseded by `restOpacity`. Default 0.
+   */
+  initialProgress?: number;
+  /**
+   * Opacity of characters that have not begun their flight, drawn drifting at
+   * their origin. This is what stops the canvas being blank at the top of the
+   * page: the hero rests as a field of dust that then flows into the portrait.
+   * `0` disables. Default 0.35.
+   */
+  restOpacity?: number;
 
   // ---- Grid / density -----------------------------------------------------
   /** Halftone cell size in CSS px on desktop. Smaller = finer, heavier. Default 5.5. */
@@ -743,6 +756,8 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
     src,
     scrollDistance = 3000,
     progress,
+    initialProgress = 0,
+    restOpacity = 0.35,
     cellSize = 5.5,
     mobileCellSize = 5,
     mobileBreakpoint = 768,
@@ -794,6 +809,8 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
   const live = useRef({
     scrollDistance,
     progress,
+    initialProgress,
+    restOpacity,
     flightOpacity,
     turbulence,
     smoothing,
@@ -806,6 +823,8 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
   live.current = {
     scrollDistance,
     progress,
+    initialProgress,
+    restOpacity,
     flightOpacity,
     turbulence,
     smoothing,
@@ -928,7 +947,12 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
       const l = live.current;
       if (typeof l.progress === 'number') return Math.min(1, Math.max(0, l.progress));
       const d = Math.max(1, l.scrollDistance);
-      return Math.min(1, Math.max(0, window.scrollY / d));
+      const raw = Math.min(1, Math.max(0, window.scrollY / d));
+      // Rest at `initialProgress` rather than 0, so the top of the page shows a
+      // faint scatter instead of an empty canvas. Scroll maps that floor -> 1,
+      // so the portrait still completes exactly at `scrollDistance`.
+      const floor = Math.min(0.95, Math.max(0, l.initialProgress));
+      return floor + (1 - floor) * raw;
     };
 
     const render = (now: number) => {
@@ -950,13 +974,36 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
       const half = cell / 2;
       const fo = l.flightOpacity;
       const turb = reduceMotion ? 0 : l.turbulence;
+      const rest = reduceMotion ? 0 : l.restOpacity;
       const shimmer = l.idle && !reduceMotion;
       const count = quality >= 1 ? f.n : Math.floor(f.n * quality);
       const atlasCanvas = at.canvas;
 
       for (let i = 0; i < count; i++) {
         let e = (p - f.delay[i] * sp) / inv;
-        if (e <= 0) continue;
+
+        if (e <= 0) {
+          // Not launched yet. Draw a faint drifting mark at its origin so the
+          // top of the page is a field of dust rather than an empty canvas.
+          if (rest <= 0) continue;
+          const r = f.rnd[i];
+          let ra = rest * (0.3 + 0.7 * r);
+          let ral = (ra * ALPHA_LEVELS) | 0;
+          if (ral <= 0) continue;
+          if (ral >= ALPHA_LEVELS) ral = ALPHA_LEVELS - 1;
+          const rph = r * TAU;
+          const rx = f.ox[i] + Math.sin(now * 0.00031 + rph) * 7;
+          const ry = f.oy[i] + Math.cos(now * 0.00027 + rph * 1.7) * 7;
+          const rg = r > 0.72 ? 1 : 0;
+          ctx.drawImage(
+            atlasCanvas, rg * tile, ral * tile, tile, tile,
+            Math.round((rx - half) * dpr) / dpr,
+            Math.round((ry - half) * dpr) / dpr,
+            cell, cell,
+          );
+          continue;
+        }
+
         if (e > 1) e = 1;
 
         // Smoothstep, not easeOut*: an ease-out front-loads the distance and the
@@ -1027,13 +1074,16 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
 
       const settled = Math.abs(target - p) < 0.0005;
       const complete = settled && p >= 0.9995;
-      const empty = settled && p <= 0.0005;
+      const resting = settled && p <= 0.002;
+      const restingDrift = resting && l.restOpacity > 0 && !reduceMotion;
+      const empty = resting && !restingDrift;
 
       if (!dirty) {
         if (empty) return; // nothing on screen, nothing to do
         if (complete && (!l.idle || reduceMotion)) return; // frozen final frame
-        if (complete) {
-          // Idle shimmer runs at a reduced rate to stay cheap.
+        if (complete || restingDrift) {
+          // The idle shimmer and the resting dust both run at a reduced rate to
+          // stay cheap while the page sits still.
           idleAcc += dt;
           const step = 1000 / Math.max(1, l.idleFps);
           if (idleAcc < step) return;

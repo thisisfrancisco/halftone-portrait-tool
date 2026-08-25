@@ -31,6 +31,8 @@ interface Tuning {
   turbulence: number;
   glyphScale: number;
   scrollDistance: number;
+  initialProgress: number;
+  restOpacity: number;
 }
 
 const DEFAULTS: Tuning = {
@@ -55,6 +57,8 @@ const DEFAULTS: Tuning = {
   turbulence: 26,
   glyphScale: 1.4,
   scrollDistance: 3000,
+  initialProgress: 0,
+  restOpacity: 0.35,
 };
 
 const RANGES: Record<keyof Tuning, [number, number, number]> = {
@@ -79,6 +83,8 @@ const RANGES: Record<keyof Tuning, [number, number, number]> = {
   turbulence: [0, 120, 1],
   glyphScale: [0.8, 2.2, 0.05],
   scrollDistance: [800, 6000, 100],
+  initialProgress: [0, 0.2, 0.005],
+  restOpacity: [0, 1, 0.01],
 };
 
 export default function App() {
@@ -132,6 +138,8 @@ export default function App() {
       <HalftonePortrait
         src={`${import.meta.env.BASE_URL}portrait.jpg`}
         scrollDistance={t.scrollDistance}
+        initialProgress={t.initialProgress}
+        restOpacity={t.restOpacity}
         cellSize={t.cellSize}
         mobileCellSize={t.cellSize - 0.5}
         opacity={t.opacity}

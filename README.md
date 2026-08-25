@@ -72,6 +72,8 @@ Everything is optional except `src`.
 | `src` | — | Image URL. Same-origin or CORS-enabled. |
 | `scrollDistance` | `3000` | Pixels of scroll from 0 to fully assembled. |
 | `progress` | — | Drive progress manually (`0..1`). Overrides scroll. |
+| `initialProgress` | `0` | Progress the portrait rests at before scrolling. Scroll maps this → 1, so it still completes at `scrollDistance`. |
+| `restOpacity` | `0.35` | Opacity of characters that haven't launched yet, drawn drifting at their origin. This is what stops the hero being blank. `0` disables. |
 | `smoothing` | `110` | Scroll follow time constant (ms). Higher = more glide. |
 
 ### Grid and density
@@ -237,6 +239,15 @@ ends on a dead straight line along the bottom and sides of that box. The last
 `edgeFeather` cells dissolve stochastically — same trick as the cloud coverage —
 so the subject fades into the atmosphere rather than being sliced off. Only the
 portrait is feathered; the cloud already extends past the box on its own.
+
+**The resting state.** At scroll 0 no character has begun its flight, so the
+canvas would be genuinely empty — a blank hero. Raising the progress floor
+doesn't fix it: at 2% only ~3% of characters have launched and they're barely
+faded in, which measured 26 lit pixels against ~25,000 for the finished
+portrait. Instead, characters that haven't launched are drawn drifting faintly
+at their **origins**. The hero rests as a field of dust that then flows into the
+portrait, and the reveal timeline is untouched. Both the resting drift and the
+idle shimmer redraw at `idleFps` rather than every frame.
 
 **Glyph condensation.** In flight, a character draws a sparser glyph than its
 final one (`round(gi * (0.25 + 0.75 * k))`), so marks visibly condense from dots
