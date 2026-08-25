@@ -23,6 +23,7 @@ interface Tuning {
   atmosphere: number;
   atmosphereReach: number;
   atmosphereScale: number;
+  edgeFeather: number;
   travel: number;
   swirl: number;
   spread: number;
@@ -46,6 +47,7 @@ const DEFAULTS: Tuning = {
   atmosphere: 0.15,
   atmosphereReach: 45,
   atmosphereScale: 1,
+  edgeFeather: 14,
   travel: 520,
   swirl: 220,
   spread: 0.55,
@@ -69,6 +71,7 @@ const RANGES: Record<keyof Tuning, [number, number, number]> = {
   atmosphere: [0, 0.5, 0.01],
   atmosphereReach: [4, 90, 1],
   atmosphereScale: [0.3, 3, 0.05],
+  edgeFeather: [0, 40, 1],
   travel: [100, 2000, 10],
   swirl: [0, 700, 10],
   spread: [0, 0.95, 0.01],
@@ -143,6 +146,7 @@ export default function App() {
         atmosphere={t.atmosphere}
         atmosphereReach={t.atmosphereReach}
         atmosphereScale={t.atmosphereScale}
+        edgeFeather={t.edgeFeather}
         travel={t.travel}
         swirl={t.swirl}
         spread={t.spread}

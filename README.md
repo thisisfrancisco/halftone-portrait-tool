@@ -101,6 +101,7 @@ Everything is optional except `src`.
 | `atmosphere` | `0.15` | Peak density of the ambient cloud field around the subject. `0` disables. |
 | `atmosphereReach` | `45` | How far, in cells, the cloud reaches from the silhouette. |
 | `atmosphereScale` | `1` | Cloud noise frequency. Higher = smaller, busier wisps. |
+| `edgeFeather` | `14` | Cells over which the portrait dissolves at the edges of its own box, so a subject running to the edge of the photo fades out instead of ending on a straight cut. `0` disables. |
 | `glyphScale` | `1.4` | Glyph size relative to its cell. |
 | `fontFamily` | system mono stack | Any monospace stack. |
 
@@ -156,6 +157,7 @@ For a different photo, `blackPoint` and `whitePoint` are the two that matter:
 * **Faint marks appearing out in the background** → lower `fillHoleSeal`.
 * **Silhouette ends on a hard edge (hair, shoulders)** → raise `atmosphere` or `atmosphereReach`.
 * **Cloud reads as texture rather than banks** → lower `atmosphereScale`.
+* **Straight cut where shoulders meet the frame** → raise `edgeFeather`.
 
 Run the dev harness and use the live panel rather than guessing — it writes the
 values to `localStorage` and prints a JSON block you can paste straight into your
@@ -228,6 +230,13 @@ equal to its local coverage makes the field thin out grain by grain, which is
 what reads as vapour. The atmosphere is capped at 30% of the particle budget,
 keeping the highest-coverage cells — the ones doing the work against the
 silhouette.
+
+**Edge feather.** The photo is a crop: the jacket and shoulders run right to the
+frame edge. Sampling stops at the portrait box, so without a feather the halftone
+ends on a dead straight line along the bottom and sides of that box. The last
+`edgeFeather` cells dissolve stochastically — same trick as the cloud coverage —
+so the subject fades into the atmosphere rather than being sliced off. Only the
+portrait is feathered; the cloud already extends past the box on its own.
 
 **Glyph condensation.** In flight, a character draws a sparser glyph than its
 final one (`round(gi * (0.25 + 0.75 * k))`), so marks visibly condense from dots

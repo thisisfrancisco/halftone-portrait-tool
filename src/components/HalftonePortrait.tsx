@@ -77,6 +77,12 @@ export interface HalftonePortraitProps {
   atmosphereReach?: number;
   /** Cloud noise frequency. Higher = smaller, busier wisps. Default 1. */
   atmosphereScale?: number;
+  /**
+   * Cells over which the portrait dissolves at the edges of its own box, so a
+   * subject that runs to the edge of the photo fades out instead of ending on a
+   * straight cut. `0` disables. Default 14.
+   */
+  edgeFeather?: number;
   /** Glyph size relative to its cell. >1 fills the cell more. Default 1.4. */
   glyphScale?: number;
   /** Monospace stack used for the glyphs. */
@@ -301,6 +307,7 @@ interface BuildOpts {
   atmosphere: number;
   atmosphereReach: number;
   atmosphereScale: number;
+  edgeFeather: number;
 }
 
 function buildField(o: BuildOpts): Field {
@@ -591,6 +598,34 @@ function buildField(o: BuildOpts): Field {
       }
     }
 
+    // Pass 5: feather the portrait against the edges of its own box. The photo
+    // is a crop — the jacket and shoulders run right to the frame edge — so the
+    // halftone otherwise stops on a dead straight line where the sampled box
+    // ends. Dissolving stochastically over the last few cells lets the subject
+    // fade into the atmosphere instead of being sliced off. Only the portrait is
+    // feathered; the cloud already extends past the box on its own.
+    if (o.edgeFeather > 0) {
+      const fe = o.edgeFeather;
+      const lastCol = padL + pcols - 1;
+      const lastRow = padT + prows - 1;
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const i = y * cols + x;
+          if (dens[i] <= 0) continue;
+          if (!lit[i] && !isHole[i]) continue;
+          const dEdge = Math.min(x - padL, lastCol - x, y - padT, lastRow - y);
+          if (dEdge >= fe) continue;
+          let t = dEdge <= 0 ? 0 : dEdge / fe;
+          t = t * t * (3 - 2 * t);
+          if (hash2(x, y, o.seed + 509) > t) {
+            dens[i] = 0;
+            continue;
+          }
+          dens[i] *= 0.5 + 0.5 * t;
+        }
+      }
+    }
+
     const keep: number[] = [];
     const gidx: number[] = [];
     for (let i = 0; i < nCells; i++) {
@@ -726,6 +761,7 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
     atmosphere = 0.15,
     atmosphereReach = 45,
     atmosphereScale = 1,
+    edgeFeather = 14,
     glyphScale = 1.4,
     fontFamily = DEFAULT_FONT,
     fit = 'contain',
@@ -784,7 +820,7 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
   const buildKey = [
     cellSize, mobileCellSize, mobileBreakpoint, maxParticles, mobileMaxParticles,
     ramp, color, background, blackPoint, whitePoint, gamma, glyphScale, fontFamily,
-    fillHoles, fillHoleSeal, fillHoleFalloff, atmosphere, atmosphereReach, atmosphereScale,
+    fillHoles, fillHoleSeal, fillHoleFalloff, atmosphere, atmosphereReach, atmosphereScale, edgeFeather,
     fit, scale, offsetX, offsetY, travel, swirl, seed, flowScale, maxDpr, debug,
   ].join('|');
 
@@ -855,6 +891,7 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
         atmosphere,
         atmosphereReach,
         atmosphereScale,
+        edgeFeather,
         fit,
         scale,
         offsetX,
