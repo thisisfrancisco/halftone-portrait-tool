@@ -74,15 +74,15 @@ Everything is optional except `src`.
 | `progress` | — | Drive progress manually (`0..1`). Overrides scroll. |
 | `initialProgress` | `0` | Progress the portrait rests at before scrolling. Scroll maps this → 1, so it still completes at `scrollDistance`. |
 | `restOpacity` | `0.35` | Opacity of characters that haven't launched yet, drawn drifting at their origin. This is what stops the hero being blank. `0` disables. |
-| `restDensity` | `0.035` | Fraction of those characters actually drawn. Deliberately low — drawing all of them reads as a static field rather than a scatter. |
+| `restDensity` | `0.05` | Fraction of those characters actually drawn. Deliberately low — drawing all of them reads as a static field rather than a scatter. |
 | `smoothing` | `110` | Scroll follow time constant (ms). Higher = more glide. |
 
 ### Grid and density
 
 | Prop | Default | Notes |
 |---|---|---|
-| `cellSize` | `5.5` | Halftone cell in CSS px (desktop). Smaller = finer. |
-| `mobileCellSize` | `5` | Cell size below `mobileBreakpoint`. |
+| `cellSize` | `8` | Halftone cell in CSS px (desktop). Smaller = finer. |
+| `mobileCellSize` | `6.5` | Cell size below `mobileBreakpoint`. |
 | `mobileBreakpoint` | `768` | Viewport width for the mobile branch. |
 | `maxParticles` | `13000` | Desktop ceiling. Cell size grows automatically to respect it. |
 | `mobileMaxParticles` | `4200` | Mobile ceiling. |
@@ -94,7 +94,7 @@ Everything is optional except `src`.
 | `ramp` | `.·,:;/\|=+ox0O#%@` | Glyph ramp, sparse → dense. |
 | `color` | `#F5F5F5` | Glyph colour. |
 | `background` | `null` | `null` keeps the canvas transparent. |
-| `opacity` | `0.72` | CSS opacity of the whole canvas. |
+| `opacity` | `0.5` | CSS opacity of the whole canvas. |
 | `blackPoint` | `0.085` | Luminance below this is dropped — this is what removes the photo's background. |
 | `whitePoint` | `0.8` | Luminance at/above this maps to the densest glyph. |
 | `gamma` | `0.8` | `<1` lifts midtones, `>1` deepens them. |
@@ -105,7 +105,7 @@ Everything is optional except `src`.
 | `atmosphereReach` | `45` | How far, in cells, the cloud reaches from the silhouette. |
 | `atmosphereScale` | `1` | Cloud noise frequency. Higher = smaller, busier wisps. |
 | `edgeFeather` | `14` | Cells over which the portrait dissolves at the edges of its own box, so a subject running to the edge of the photo fades out instead of ending on a straight cut. `0` disables. |
-| `glyphScale` | `1.4` | Glyph size relative to its cell. |
+| `glyphScale` | `1.05` | Glyph size relative to its cell. |
 | `fontFamily` | system mono stack | Any monospace stack. |
 
 ### Layout
@@ -161,6 +161,11 @@ For a different photo, `blackPoint` and `whitePoint` are the two that matter:
 * **Silhouette ends on a hard edge (hair, shoulders)** → raise `atmosphere` or `atmosphereReach`.
 * **Cloud reads as texture rather than banks** → lower `atmosphereScale`.
 * **Straight cut where shoulders meet the frame** → raise `edgeFeather`.
+* **Reads as a subject rather than a background** → raise `cellSize` (spreads the
+  characters apart) before reaching for `opacity`. Lowering opacity alone dims a
+  solid mass without opening it up; `glyphScale` below 1 adds air around each
+  character. The defaults are tuned to sit behind page content, not to be the
+  focal point.
 
 Run the dev harness and use the live panel rather than guessing — it writes the
 values to `localStorage` and prints a JSON block you can paste straight into your

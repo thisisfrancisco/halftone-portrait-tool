@@ -37,8 +37,8 @@ interface Tuning {
 }
 
 const DEFAULTS: Tuning = {
-  cellSize: 5.5,
-  opacity: 0.72,
+  cellSize: 8,
+  opacity: 0.5,
   scale: 0.92,
   offsetY: 0,
   blackPoint: 0.085,
@@ -56,11 +56,11 @@ const DEFAULTS: Tuning = {
   spread: 0.55,
   flightOpacity: 0.5,
   turbulence: 26,
-  glyphScale: 1.4,
+  glyphScale: 1.05,
   scrollDistance: 3000,
   initialProgress: 0,
   restOpacity: 0.35,
-  restDensity: 0.035,
+  restDensity: 0.05,
 };
 
 const RANGES: Record<keyof Tuning, [number, number, number]> = {

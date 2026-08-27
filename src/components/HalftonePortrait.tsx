@@ -39,14 +39,14 @@ export interface HalftonePortraitProps {
   /**
    * Fraction of the not-yet-launched characters actually drawn at rest. Drawing
    * all of them reads as a dense static field rather than a scatter, so this is
-   * deliberately low. Default 0.035.
+   * deliberately low. Default 0.05.
    */
   restDensity?: number;
 
   // ---- Grid / density -----------------------------------------------------
-  /** Halftone cell size in CSS px on desktop. Smaller = finer, heavier. Default 5.5. */
+  /** Halftone cell size in CSS px on desktop. Smaller = finer, heavier. Default 8. */
   cellSize?: number;
-  /** Halftone cell size in CSS px below `mobileBreakpoint`. Default 5. */
+  /** Halftone cell size in CSS px below `mobileBreakpoint`. Default 6.5. */
   mobileCellSize?: number;
   /** Viewport width under which mobile settings apply. Default 768. */
   mobileBreakpoint?: number;
@@ -62,7 +62,7 @@ export interface HalftonePortraitProps {
   color?: string;
   /** Canvas backdrop. `null` (default) keeps it transparent. */
   background?: string | null;
-  /** Overall CSS opacity of the canvas. Default 0.72. */
+  /** Overall CSS opacity of the canvas. Default 0.5. */
   opacity?: number;
   /** Luminance below this is dropped entirely (kills the photo's black bg). Default 0.085. */
   blackPoint?: number;
@@ -102,7 +102,11 @@ export interface HalftonePortraitProps {
    * straight cut. `0` disables. Default 14.
    */
   edgeFeather?: number;
-  /** Glyph size relative to its cell. >1 fills the cell more. Default 1.4. */
+  /**
+   * Glyph size relative to its cell. Below 1 leaves air around each character,
+   * which is what makes the field read as texture rather than a solid mass.
+   * Default 1.05.
+   */
   glyphScale?: number;
   /** Monospace stack used for the glyphs. */
   fontFamily?: string;
@@ -764,16 +768,16 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
     progress,
     initialProgress = 0,
     restOpacity = 0.35,
-    restDensity = 0.035,
-    cellSize = 5.5,
-    mobileCellSize = 5,
+    restDensity = 0.05,
+    cellSize = 8,
+    mobileCellSize = 6.5,
     mobileBreakpoint = 768,
     maxParticles = 13000,
     mobileMaxParticles = 4200,
     ramp = DEFAULT_RAMP,
     color = '#F5F5F5',
     background = null,
-    opacity = 0.72,
+    opacity = 0.5,
     blackPoint = 0.085,
     whitePoint = 0.8,
     gamma = 0.8,
@@ -784,7 +788,7 @@ export function HalftonePortrait(props: HalftonePortraitProps) {
     atmosphereReach = 45,
     atmosphereScale = 1,
     edgeFeather = 14,
-    glyphScale = 1.4,
+    glyphScale = 1.05,
     fontFamily = DEFAULT_FONT,
     fit = 'contain',
     scale = 0.92,
